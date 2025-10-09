@@ -1,0 +1,14 @@
+// tsconfig.test.json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "bundler"
+  },
+  "include": [
+    "src/**/*",
+    "__mocks__/**/*",
+    "jest.config.ts"
+  ]
+}

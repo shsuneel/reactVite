@@ -1,0 +1,12 @@
+my-react-app/
+├── node_modules/
+├── public/
+│   └── vite.svg
+├── src/
+│   ├── assets/
+│   ├── App.css
+│   ├── App.jsx
+│   ├── main.jsx
+├── index.html
+├── package.json
+└── yarn.lock
