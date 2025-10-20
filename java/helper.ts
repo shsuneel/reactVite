@@ -23,18 +23,33 @@ function interpolateTemplate(template: string, context: Context): string {
  * Evaluates a single expression: ternary, value, or variable
  */
 function evaluateExpression(expr: string, context: Context): unknown {
-  // Match ternary: condition ? truePart : falsePart
-  // Use a simple leftmost match (does NOT handle nested ternaries)
-  const ternaryMatch = expr.match(/^\s*(.+?)\s*\?\s*(.+?)\s*:\s*(.+?)\s*$/);
-  if (ternaryMatch) {
-    const conditionExpr = ternaryMatch[1].trim();
-    const trueExpr = ternaryMatch[2].trim();
-    const falseExpr = ternaryMatch[3].trim();
+  // Count ? and : — must have exactly one of each, and ? must come before :
+  const qIndex = expr.indexOf('?');
+  const cIndex = expr.lastIndexOf(':'); // use lastIndexOf to allow nested-like (though we don't support nesting)
 
-    const condition = evaluateExpression(conditionExpr, context);
+  if (qIndex !== -1 && cIndex !== -1 && qIndex < cIndex) {
+    // Split manually to avoid regex greediness issues
+    const conditionPart = expr.substring(0, qIndex).trim();
+    const remainder = expr.substring(qIndex + 1).trim();
+    const colonIndex = remainder.indexOf(':');
+    
+    if (colonIndex === -1) {
+      // Malformed: has ? but no : in remainder → not a valid ternary
+      return evaluateValue(expr, context);
+    }
+
+    const truePart = remainder.substring(0, colonIndex).trim();
+    const falsePart = remainder.substring(colonIndex + 1).trim();
+
+    // If any part is empty, treat as invalid ternary → fallback to value
+    if (conditionPart === '' || truePart === '' || falsePart === '') {
+      return evaluateValue(expr, context);
+    }
+
+    const condition = evaluateExpression(conditionPart, context);
     return condition
-      ? evaluateExpression(trueExpr, context)
-      : evaluateExpression(falseExpr, context);
+      ? evaluateExpression(truePart, context)
+      : evaluateExpression(falsePart, context);
   }
 
   // Not a ternary → evaluate as value
