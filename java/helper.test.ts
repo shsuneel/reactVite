@@ -1,143 +1,165 @@
-import { interpolateTemplate } from './templateEvaluator'; // adjust path as needed
+// interpolateTemplate.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { interpolateTemplate, getNestedValue } from './interpolateTemplate';
 
-describe('interpolateTemplate', () => {
-  const fullContext = {
-    user: {
-      isExternal: true,
-      role: 'guest',
-      profile: {
-        id: '123',
-        name: 'Alice'
-      }
-    },
-    config: {
-      api: {
-        baseUrl: 'https://api.example.com'
+// Mock console.warn to avoid polluting test output and to assert warnings
+const mockConsoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+describe('getNestedValue', () => {
+  const testObj = {
+    a: {
+      b: {
+        c: 'deep-value',
+        arr: [1, 2, { x: 'nested-in-array' }],
       },
-      externalUrl: 'https://external.com',
-      internalUrl: 'https://internal.com'
+      bool: true,
     },
-    count: 42,
-    flag: false,
-    nullVal: null,
-    undefVal: undefined
+    nullProp: null,
+    undefProp: undefined,
   };
 
-  // ======================
-  // ✅ POSITIVE TESTS
-  // ======================
-
-  it('should interpolate simple variable references', () => {
-    expect(interpolateTemplate('~{user.profile.id}', fullContext)).toBe('123');
-    expect(interpolateTemplate('~{config.api.baseUrl}', fullContext)).toBe('https://api.example.com');
-    expect(interpolateTemplate('~{count}', fullContext)).toBe('42');
+  it('should return nested value for valid path', () => {
+    expect(getNestedValue(testObj, 'a.b.c')).toBe('deep-value');
+    expect(getNestedValue(testObj, 'a.bool')).toBe(true);
   });
 
-  it('should handle multiple placeholders in one template', () => {
-    const template = '~{config.api.baseUrl}/users/~{user.profile.id}';
-    expect(interpolateTemplate(template, fullContext)).toBe('https://api.example.com/users/123');
+  it('should return undefined for non-existent path', () => {
+    expect(getNestedValue(testObj, 'a.b.d')).toBeUndefined();
+    expect(getNestedValue(testObj, 'x.y.z')).toBeUndefined();
   });
 
-  it('should evaluate ternary with boolean condition and string literals', () => {
-    const template = "~{ user.isExternal ? 'external' : 'internal' }";
-    expect(interpolateTemplate(template, fullContext)).toBe('external');
+  it('should return undefined when intermediate property is null', () => {
+    expect(getNestedValue(testObj, 'nullProp.someKey')).toBeUndefined();
   });
 
-  it('should evaluate ternary with variable references in all parts', () => {
-    const template = "~{ user.isExternal ? config.externalUrl : config.internalUrl }";
-    expect(interpolateTemplate(template, fullContext)).toBe('https://external.com');
+  it('should return undefined when intermediate property is undefined', () => {
+    expect(getNestedValue(testObj, 'undefProp.someKey')).toBeUndefined();
   });
 
-  it('should handle ternary with mixed literals and variables', () => {
-    const template = "~{ flag ? 'on' : user.role }";
-    expect(interpolateTemplate(template, fullContext)).toBe('guest');
+  it('should return undefined when root object is null or undefined', () => {
+    expect(getNestedValue(null, 'a.b')).toBeUndefined();
+    expect(getNestedValue(undefined, 'a.b')).toBeUndefined();
   });
 
-  it('should convert null and undefined to empty string', () => {
-    expect(interpolateTemplate('~{nullVal}', fullContext)).toBe('');
-    expect(interpolateTemplate('~{undefVal}', fullContext)).toBe('');
+  it('should return undefined when hitting non-object in path', () => {
+    expect(getNestedValue(testObj, 'a.b.c.d')).toBeUndefined(); // 'deep-value' is string, not object
+  });
+});
+
+describe('interpolateTemplate', () => {
+  afterEach(() => {
+    mockConsoleWarn.mockClear();
   });
 
-  it('should handle numeric and boolean literals inside ternary', () => {
-    expect(interpolateTemplate('~{ true ? 100 : 200 }', {})).toBe('100');
-    expect(interpolateTemplate("~{ false ? 'a' : 'b' }", {})).toBe('b');
+  // ✅ Positive Scenarios
+  describe('Positive cases', () => {
+    it('should return original string when no ~{...} is present', () => {
+      expect(interpolateTemplate('plain/text', {})).toBe('plain/text');
+      expect(interpolateTemplate('user/name/123', {})).toBe('user/name/123');
+    });
+
+    it('should interpolate simple variables', () => {
+      expect(interpolateTemplate('~{name}', { name: 'Alice' })).toBe('Alice');
+      expect(interpolateTemplate('Hello ~{user.name}!', { user: { name: 'Bob' } })).toBe('Hello Bob!');
+    });
+
+    it('should handle string literals', () => {
+      expect(interpolateTemplate('~{"hello"}', {})).toBe('hello');
+      expect(interpolateTemplate("~{'world'}", {})).toBe('world');
+    });
+
+    it('should handle boolean and null literals', () => {
+      expect(interpolateTemplate('~{true}', {})).toBe('true');
+      expect(interpolateTemplate('~{false}', {})).toBe('false');
+      expect(interpolateTemplate('~{null}', {})).toBe('');
+      expect(interpolateTemplate('~{undefined}', {})).toBe('');
+    });
+
+    it('should handle number literals', () => {
+      expect(interpolateTemplate('~{42}', {})).toBe('42');
+      expect(interpolateTemplate('~{-3.14}', {})).toBe('-3.14');
+    });
+
+    it('should evaluate ternary expressions (truthy)', () => {
+      expect(interpolateTemplate('~{isAdmin ? "admin" : "user"}', { isAdmin: true })).toBe('admin');
+    });
+
+    it('should evaluate ternary expressions (falsy)', () => {
+      expect(interpolateTemplate('~{isAdmin ? "admin" : "user"}', { isAdmin: false })).toBe('user');
+      expect(interpolateTemplate('~{missing ? "yes" : "no"}', {})).toBe('no');
+    });
+
+    it('should handle nested interpolation in ternary branches', () => {
+      const ctx = { flag: true, a: 'A', b: 'B' };
+      expect(interpolateTemplate('~{flag ? ~{a} : ~{b}}', ctx)).toBe('A');
+    });
+
+    it('should return empty string for ~{}', () => {
+      expect(interpolateTemplate('~{}', {})).toBe('');
+    });
+
+    it('should handle falsy but defined values (e.g., 0, false, "")', () => {
+      expect(interpolateTemplate('~{count}', { count: 0 })).toBe('0');
+      expect(interpolateTemplate('~{flag}', { flag: false })).toBe('false');
+      expect(interpolateTemplate('~{empty}', { empty: '' })).toBe('');
+    });
   });
 
-  it('should handle empty placeholder ~{}', () => {
-    expect(interpolateTemplate('~{}', {})).toBe('');
-    expect(interpolateTemplate('start~{}end', {})).toBe('startend');
+  // ❌ Negative Scenarios
+  describe('Negative/error cases', () => {
+    it('should leave malformed expressions unchanged and warn', () => {
+      const result = interpolateTemplate('~{invalid!}', {});
+      expect(result).toBe('~{invalid!}');
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        'Failed to evaluate template expression: "invalid!"',
+        expect.any(Error)
+      );
+    });
+
+    it('should handle invalid variable names (starting with number)', () => {
+      const result = interpolateTemplate('~{123abc}', {});
+      expect(result).toBe('~{123abc}');
+      expect(mockConsoleWarn).toHaveBeenCalled();
+    });
+
+    it('should fallback to original on malformed ternary (missing ? or :)', () => {
+      expect(interpolateTemplate('~{a ? b}', {})).toBe('~{a ? b}');
+      expect(interpolateTemplate('~{a : b}', {})).toBe('~{a : b}');
+      expect(mockConsoleWarn).toHaveBeenCalledTimes(2);
+    });
+
+    it('should fallback on ternary with empty parts', () => {
+      expect(interpolateTemplate('~{ ? "a" : "b" }', {})).toBe('~{ ? "a" : "b" }');
+      expect(interpolateTemplate('~{flag ?  : "b"}', { flag: true })).toBe('~{flag ?  : "b"}');
+      expect(mockConsoleWarn).toHaveBeenCalled();
+    });
+
+    it('should not crash on deeply broken expressions', () => {
+      expect(interpolateTemplate('~{a.b.c.d.e}', { a: null })).toBe('');
+    });
+
+    it('should preserve original match when evaluation throws', () => {
+      const result = interpolateTemplate('~{[notvalid]}', {});
+      expect(result).toBe('~{[notvalid]}');
+    });
   });
 
-  it('should handle whitespace in expressions', () => {
-    expect(interpolateTemplate('~{ user.isExternal ? config.externalUrl : config.internalUrl }', fullContext)).toBe('https://external.com');
-    expect(interpolateTemplate('~{   user.profile.id   }', fullContext)).toBe('123');
-  });
+  // ⚠️ Edge Cases
+  describe('Edge cases', () => {
+    it('should handle whitespace in expressions', () => {
+      expect(interpolateTemplate('~{ user.name }', { user: { name: 'Alice' } })).toBe('Alice');
+      expect(interpolateTemplate('~{ flag ? "yes" : "no" }', { flag: true })).toBe('yes');
+    });
 
-  it('should work with string literals containing quotes', () => {
-    const template = "~{ user.isExternal ? \"Hello 'world'\" : 'Hi \"user\"' }";
-    expect(interpolateTemplate(template, fullContext)).toBe("Hello 'world'");
-  });
+    it('should handle multiple interpolations', () => {
+      const ctx = { a: 'X', b: 'Y' };
+      expect(interpolateTemplate('~{a}/~{b}', ctx)).toBe('X/Y');
+    });
 
-  // ======================
-  // ❌ NEGATIVE TESTS
-  // ======================
-
-  it('should return empty string for missing path', () => {
-    expect(interpolateTemplate('~{missing}', {})).toBe('');
-    expect(interpolateTemplate('~{user.missing}', fullContext)).toBe('');
-    expect(interpolateTemplate('~{config.api.missing}', fullContext)).toBe('');
-  });
-
-  it('should not leak unprocessed placeholders for invalid expressions', () => {
-    // Even if expression is invalid, it should not return "~{...}"
-    expect(interpolateTemplate('~{123abc}', {})).toBe('~{123abc}'); // or '' if you prefer strict mode
-    // But for safety, we currently return the original match on error
-    // Adjust based on your error policy
-  });
-
-  it('should handle malformed ternary (missing parts)', () => {
-    // These are not valid ternaries → treated as plain paths (which don't exist)
-    expect(interpolateTemplate('~{ a ? b }', {})).toBe(''); // not a valid ternary → tries to resolve "a ? b" as path → fails
-    expect(interpolateTemplate('~{ ? b : c }', {})).toBe('');
-    expect(interpolateTemplate('~{ a ? : c }', {})).toBe('');
-  });
-
-  it('should not support nested ternaries (graceful fallback)', () => {
-    // Only the first ternary is parsed
-    const result = interpolateTemplate('~{ true ? (true ? "A" : "B") : "C" }', {});
-    // Our simple parser sees: condition="true", truePart="(true", falsePart=""A" : "B") : "C""
-    // This will likely fail → returns original or empty
-    // For this test, we expect it NOT to throw, and handle as best as possible
-    expect(() => interpolateTemplate('~{ true ? (true ? "A" : "B") : "C" }', {})).not.toThrow();
-  });
-
-  it('should handle template with no placeholders', () => {
-    expect(interpolateTemplate('plain text', {})).toBe('plain text');
-    expect(interpolateTemplate('', {})).toBe('');
-  });
-
-  it('should handle undefined context values gracefully', () => {
-    const partialContext = { user: { profile: {} } };
-    expect(interpolateTemplate('~{user.profile.id}', partialContext)).toBe('');
-  });
-
-  // ======================
-  // ⚠️ EDGE CASES
-  // ======================
-
-  it('should handle zero and negative numbers', () => {
-    expect(interpolateTemplate('~{ -5 }', {})).toBe('-5');
-    expect(interpolateTemplate('~{ 0 }', {})).toBe('0');
-    expect(interpolateTemplate('~{ -0.5 }', {})).toBe('-0.5');
-  });
-
-  it('should not match malformed placeholders', () => {
-    expect(interpolateTemplate('text ~{unclosed', {})).toBe('text ~{unclosed');
-    expect(interpolateTemplate('text ~} reversed {', {})).toBe('text ~} reversed {');
-  });
-
-  it('should handle multiple empty placeholders', () => {
-    expect(interpolateTemplate('~{}~{}', {})).toBe('');
-    expect(interpolateTemplate('a~{}b~{}c', {})).toBe('abc');
+    it('should handle null/undefined values as empty string', () => {
+      expect(interpolateTemplate('~{missing}', {})).toBe('');
+      expect(interpolateTemplate('~{nullVal}', { nullVal: null })).toBe('');
+      expect(interpolateTemplate('~{undefVal}', { undefVal: undefined })).toBe('');
+    });
   });
 });
