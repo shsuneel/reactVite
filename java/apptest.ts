@@ -3,9 +3,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 
-// Mock products globally (doesn't change)
-vi.mock('@products/pages/products/products', () => ({
-  products: () => <div data-testid="my-products">My products Content</div>,
+// Mock MyDeals globally (doesn't change)
+vi.mock('@mobile/pages/myDeals/Mydeals', () => ({
+  MyDeals: () => <div data-testid="my-deals">My Deals Content</div>,
 }));
 
 // Helper to render App with dynamic mock
@@ -63,7 +63,7 @@ describe('App component when user data is not loaded', () => {
 });
 
 describe('App component when user is loaded', () => {
-  it('renders products when user data is available', async () => {
+  it('renders MyDeals when user data is available', async () => {
     await renderWithMock({
        { id: 'abc' },
       isLoading: false,
@@ -71,7 +71,7 @@ describe('App component when user is loaded', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('my-products')).toBeInTheDocument();
+      expect(screen.getByTestId('my-deals')).toBeInTheDocument();
     });
   });
 });
